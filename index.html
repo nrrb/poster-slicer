@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Poster Slicer</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input, button { margin: 10px 0; }
+    .output { margin-top: 20px; }
+  </style>
+</head>
+<body>
+
+<h2>SVG Poster Slicer</h2>
+<p>Upload an SVG, set the final poster size in inches, and get printable 8.5"x11" slices.</p>
+
+<label>Upload SVG: <input type="file" id="svgFile" accept=".svg"></label><br>
+<label>Target Width (inches): <input type="number" id="targetWidth" value="34" step="0.1"></label><br>
+<label>Target Height (inches): <input type="number" id="targetHeight" value="44" step="0.1"></label><br>
+<button onclick="processSVG()">Process SVG</button>
+
+<div class="output" id="output"></div>
+
+<script>
+const DPI = 300; // High resolution for printing (300 DPI)
+
+function inchesToPixels(inches) {
+  return inches * DPI;
+}
+
+function readFileAsync(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+async function processSVG() {
+  const fileInput = document.getElementById('svgFile');
+  const widthInput = document.getElementById('targetWidth').value;
+  const heightInput = document.getElementById('targetHeight').value;
+
+  if (!fileInput.files[0]) {
+    alert('Please upload an SVG file.');
+    return;
+  }
+
+  const svgText = await readFileAsync(fileInput.files[0]);
+  const targetWidthPx = inchesToPixels(widthInput);
+  const targetHeightPx = inchesToPixels(heightInput);
+
+  const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+  const svgUrl = URL.createObjectURL(svgBlob);
+
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidthPx;
+    canvas.height = targetHeightPx;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, targetWidthPx, targetHeightPx);
+    
+    sliceAndDownload(canvas);
+    URL.revokeObjectURL(svgUrl);
+  };
+  img.onerror = () => alert('Failed to load SVG. Please check the file.');
+  img.src = svgUrl;
+}
+
+function sliceAndDownload(canvas) {
+  const sliceWidth = inchesToPixels(8.5);
+  const sliceHeight = inchesToPixels(11);
+
+  const cols = Math.ceil(canvas.width / sliceWidth);
+  const rows = Math.ceil(canvas.height / sliceHeight);
+
+  const output = document.getElementById('output');
+  output.innerHTML = `<p>Generated ${cols * rows} pages:</p>`;
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const sliceCanvas = document.createElement('canvas');
+      sliceCanvas.width = sliceWidth;
+      sliceCanvas.height = sliceHeight;
+      const sliceCtx = sliceCanvas.getContext('2d');
+
+      sliceCtx.fillStyle = 'white'; // Fill background white
+      sliceCtx.fillRect(0, 0, sliceWidth, sliceHeight);
+
+      sliceCtx.drawImage(
+        canvas,
+        col * sliceWidth, row * sliceHeight, // source x, y
+        sliceWidth, sliceHeight, // source width, height
+        0, 0, sliceWidth, sliceHeight // dest x, y, width, height
+      );
+
+      // Create download link
+      const link = document.createElement('a');
+      link.href = sliceCanvas.toDataURL('image/png');
+      link.download = `poster_slice_row${row + 1}_col${col + 1}.png`;
+      link.textContent = `Download slice row ${row + 1} col ${col + 1}`;
+      link.style.display = 'block';
+
+      output.appendChild(link);
+    }
+  }
+}
+</script>
+
+</body>
+</html>
