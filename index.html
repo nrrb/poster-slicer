@@ -2,27 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Poster Slicer</title>
+  <title>SVG Poster Slicer (Live, Clickable Slices)</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; }
-    input, button { margin: 10px 0; }
+    input { margin: 10px 0; display: block; }
     .output { margin-top: 20px; }
+    .preview-container { margin-top: 20px; overflow: auto; max-width: 100%; border: 1px solid #ccc; position: relative; position: relative; }
+    .preview-canvas { display: block; }
+    .preview-grid { position: absolute; top: 0; left: 0; pointer-events: none; }
+    .preview-overlay { position: absolute; top: 0; left: 0; pointer-events: auto; }
   </style>
 </head>
 <body>
 
-<h2>SVG Poster Slicer</h2>
-<p>Upload an SVG, set the final poster size in inches, and get printable 8.5"x11" slices.</p>
-
-<label>Upload SVG: <input type="file" id="svgFile" accept=".svg"></label><br>
-<label>Target Width (inches): <input type="number" id="targetWidth" value="34" step="0.1"></label><br>
-<label>Target Height (inches): <input type="number" id="targetHeight" value="44" step="0.1"></label><br>
-<button onclick="processSVG()">Process SVG</button>
-
-<div class="output" id="output"></div>
+    <h2>SVG Poster Slicer (Live & Clickable Preview)</h2>
+    <p>Upload an SVG and set one dimension. Preview and download slices by clicking on the preview pages.</p>
+    
+    <label>Upload SVG: <input type="file" id="svgFile" accept=".svg"></label>
+    <label>Target Width (inches): <input type="number" id="targetWidth" value="34" step="0.1"></label>
+    <label>Target Height (inches): <input type="number" id="targetHeight" value="44" step="0.1"></label>
+    
+    <!-- 🔑 Added instructions appear when preview is visible -->
+    <div id="instructions" style="display:none; margin-top: 15px; font-weight: bold;">
+      Click on each page below to download that part of the poster for printing.
+    </div>
+    
+    <div class="preview-container" id="previewContainer" style="display:none;">
+      <canvas id="previewCanvas" class="preview-canvas"></canvas>
+      <canvas id="gridCanvas" class="preview-grid"></canvas>
+      <div id="overlayContainer" class="preview-overlay"></div>
+    </div>
+    
+    <div class="output" id="output"></div>
 
 <script>
-const DPI = 300; // High resolution for printing (300 DPI)
+const DPI = 300;
+let loadedImage = null;
+let aspectRatio = 1;
+let sliceLinks = []; // To store slices and links
 
 function inchesToPixels(inches) {
   return inches * DPI;
@@ -37,73 +54,147 @@ function readFileAsync(file) {
   });
 }
 
-async function processSVG() {
-  const fileInput = document.getElementById('svgFile');
-  const widthInput = document.getElementById('targetWidth').value;
-  const heightInput = document.getElementById('targetHeight').value;
+document.getElementById('svgFile').addEventListener('change', handleFileUpload);
+document.getElementById('targetWidth').addEventListener('input', handleWidthChange);
+document.getElementById('targetHeight').addEventListener('input', handleHeightChange);
 
-  if (!fileInput.files[0]) {
-    alert('Please upload an SVG file.');
-    return;
-  }
+async function handleFileUpload() {
+  const fileInput = document.getElementById('svgFile');
+  if (!fileInput.files[0]) return;
 
   const svgText = await readFileAsync(fileInput.files[0]);
-  const targetWidthPx = inchesToPixels(widthInput);
-  const targetHeightPx = inchesToPixels(heightInput);
-
   const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
   const svgUrl = URL.createObjectURL(svgBlob);
 
   const img = new Image();
   img.onload = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = targetWidthPx;
-    canvas.height = targetHeightPx;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, targetWidthPx, targetHeightPx);
-    
-    sliceAndDownload(canvas);
+    loadedImage = img;
+    aspectRatio = img.width / img.height;
+    const widthInches = parseFloat(document.getElementById('targetWidth').value);
+    const heightInches = widthInches / aspectRatio;
+    document.getElementById('targetHeight').value = heightInches.toFixed(2);
+    updatePreviewAndSlices();
     URL.revokeObjectURL(svgUrl);
   };
-  img.onerror = () => alert('Failed to load SVG. Please check the file.');
   img.src = svgUrl;
 }
 
-function sliceAndDownload(canvas) {
+function handleWidthChange() {
+  if (!loadedImage) return;
+  const widthInches = parseFloat(document.getElementById('targetWidth').value);
+  const heightInches = widthInches / aspectRatio;
+  document.getElementById('targetHeight').value = heightInches.toFixed(2);
+  updatePreviewAndSlices();
+}
+
+function handleHeightChange() {
+  if (!loadedImage) return;
+  const heightInches = parseFloat(document.getElementById('targetHeight').value);
+  const widthInches = heightInches * aspectRatio;
+  document.getElementById('targetWidth').value = widthInches.toFixed(2);
+  updatePreviewAndSlices();
+}
+
+function updatePreviewAndSlices() {
+  updatePreview();
+  createSlices();
+}
+
+function updatePreview() {
+  const previewContainer = document.getElementById('previewContainer');
+  const previewCanvas = document.getElementById('previewCanvas');
+  const gridCanvas = document.getElementById('gridCanvas');
+  const overlayContainer = document.getElementById('overlayContainer');
+
+  const widthInches = parseFloat(document.getElementById('targetWidth').value);
+  const heightInches = parseFloat(document.getElementById('targetHeight').value);
+  const widthPx = inchesToPixels(widthInches);
+  const heightPx = inchesToPixels(heightInches);
+
+  const maxPreviewWidth = 800;
+  const scale = Math.min(1, maxPreviewWidth / widthPx);
+  const previewWidth = widthPx * scale;
+  const previewHeight = heightPx * scale;
+
+  previewCanvas.width = previewWidth;
+  previewCanvas.height = previewHeight;
+  gridCanvas.width = previewWidth;
+  gridCanvas.height = previewHeight;
+
+  const ctx = previewCanvas.getContext('2d');
+  ctx.clearRect(0, 0, previewWidth, previewHeight);
+  ctx.drawImage(loadedImage, 0, 0, previewWidth, previewHeight);
+
+  // Draw grid
+  const gridCtx = gridCanvas.getContext('2d');
+  gridCtx.clearRect(0, 0, previewWidth, previewHeight);
+  gridCtx.strokeStyle = 'rgba(0,0,0,0.5)';
+  gridCtx.setLineDash([5, 5]);
+  const sliceWidth = inchesToPixels(8.5) * scale;
+  const sliceHeight = inchesToPixels(11) * scale;
+
+  for (let x = sliceWidth; x < previewWidth; x += sliceWidth) {
+    gridCtx.beginPath();
+    gridCtx.moveTo(x, 0);
+    gridCtx.lineTo(x, previewHeight);
+    gridCtx.stroke();
+  }
+  for (let y = sliceHeight; y < previewHeight; y += sliceHeight) {
+    gridCtx.beginPath();
+    gridCtx.moveTo(0, y);
+    gridCtx.lineTo(previewWidth, y);
+    gridCtx.stroke();
+  }
+
+  // Create clickable overlay
+  overlayContainer.innerHTML = '';
+  const cols = Math.ceil(previewWidth / sliceWidth);
+  const rows = Math.ceil(previewHeight / sliceHeight);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const link = document.createElement('a');
+      link.href = sliceLinks[row]?.[col] || '#';
+      link.style.position = 'absolute';
+      link.style.left = `${col * sliceWidth}px`;
+      link.style.top = `${row * sliceHeight}px`;
+      link.style.width = `${sliceWidth}px`;
+      link.style.height = `${sliceHeight}px`;
+      link.style.display = 'block';
+      link.style.boxSizing = 'border-box';
+      link.download = `poster_row${row + 1}_col${col + 1}.png`;
+      overlayContainer.appendChild(link);
+    }
+  }
+
+  previewContainer.style.display = 'block';
+
+  document.getElementById('instructions').style.display = 'block';
+}
+
+function createSlices() {
+  const widthInches = parseFloat(document.getElementById('targetWidth').value);
+  const heightInches = parseFloat(document.getElementById('targetHeight').value);
+  const totalWidthPx = inchesToPixels(widthInches);
+  const totalHeightPx = inchesToPixels(heightInches);
   const sliceWidth = inchesToPixels(8.5);
   const sliceHeight = inchesToPixels(11);
 
-  const cols = Math.ceil(canvas.width / sliceWidth);
-  const rows = Math.ceil(canvas.height / sliceHeight);
+  const canvas = document.createElement('canvas');
+  canvas.width = totalWidthPx;
+  canvas.height = totalHeightPx;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(loadedImage, 0, 0, totalWidthPx, totalHeightPx);
 
-  const output = document.getElementById('output');
-  output.innerHTML = `<p>Generated ${cols * rows} pages:</p>`;
-
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
+  sliceLinks = [];
+  for (let row = 0; row < Math.ceil(totalHeightPx / sliceHeight); row++) {
+    sliceLinks[row] = [];
+    for (let col = 0; col < Math.ceil(totalWidthPx / sliceWidth); col++) {
       const sliceCanvas = document.createElement('canvas');
       sliceCanvas.width = sliceWidth;
       sliceCanvas.height = sliceHeight;
       const sliceCtx = sliceCanvas.getContext('2d');
-
-      sliceCtx.fillStyle = 'white'; // Fill background white
-      sliceCtx.fillRect(0, 0, sliceWidth, sliceHeight);
-
-      sliceCtx.drawImage(
-        canvas,
-        col * sliceWidth, row * sliceHeight, // source x, y
-        sliceWidth, sliceHeight, // source width, height
-        0, 0, sliceWidth, sliceHeight // dest x, y, width, height
-      );
-
-      // Create download link
-      const link = document.createElement('a');
-      link.href = sliceCanvas.toDataURL('image/png');
-      link.download = `poster_slice_row${row + 1}_col${col + 1}.png`;
-      link.textContent = `Download slice row ${row + 1} col ${col + 1}`;
-      link.style.display = 'block';
-
-      output.appendChild(link);
+      sliceCtx.drawImage(canvas, col * sliceWidth, row * sliceHeight, sliceWidth, sliceHeight, 0, 0, sliceWidth, sliceHeight);
+      sliceLinks[row][col] = sliceCanvas.toDataURL('image/png');
     }
   }
 }
