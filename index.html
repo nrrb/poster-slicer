@@ -2,35 +2,106 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Poster Slicer (Auto-load SVG + PNG, JPG)</title>
+  <title>Poster Slicer</title>
+  <!-- Materialize CSS -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css" rel="stylesheet">
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    input { margin: 10px 0; display: block; }
-    .output { margin-top: 20px; }
-    .preview-container { margin-top: 20px; overflow: auto; max-width: 100%; border: 1px solid #ccc; position: relative; }
+    body { font-family: 'Roboto', sans-serif; padding: 20px; }
+    /* Make the file upload button full-width and taller */
+    .file-field .btn {
+      width: 100%;
+      height: 60px;
+      line-height: 60px;
+      font-size: 18px;
+    }
+    /* Input group for the +/- buttons */
+    .input-group {
+      display: flex;
+      align-items: center;
+    }
+    .input-group button {
+      flex: 0 0 auto;
+      margin: 0 5px;
+    }
+    .input-group input {
+      text-align: center;
+      flex: 1 1 auto;
+    }
+    .preview-container {
+      margin-top: 20px;
+      overflow: auto;
+      max-width: 100%;
+      border: 1px solid #ccc;
+      position: relative;
+    }
     .preview-canvas { display: block; }
-    .preview-grid { position: absolute; top: 0; left: 0; pointer-events: none; }
-    .preview-overlay { position: absolute; top: 0; left: 0; pointer-events: auto; }
+    .preview-grid {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+    .preview-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: auto;
+    }
   </style>
 </head>
 <body>
 
-<h2>Poster Slicer (SVG, PNG, JPG + Default Load)</h2>
-<p>Upload an SVG, PNG, or JPG, or use the default "delight.svg". Set width or height, and the other updates automatically. Click slices to download.</p>
-
-<label>Upload Image (SVG, PNG, JPG): <input type="file" id="imageFile" accept=".svg,.png,.jpg,.jpeg"></label>
-<label>Target Width (inches): <input type="number" id="targetWidth" value="34" step="0.1"></label>
-<label>Target Height (inches): <input type="number" id="targetHeight" value="44" step="0.1"></label>
-
-<div id="instructions" style="display:none; margin-top: 15px; font-weight: bold;">
-  Click on each page below to download that part of the poster for printing.
+<div class="container">
+  <h2>Poster Slicer</h2>
+  <p>
+    Upload an SVG, PNG, or JPG. 
+    Set one dimension and the other adjusts automatically. Click on a slice to download that part of the poster.
+  </p>
+  
+  <!-- Materialize file input -->
+  <div class="file-field input-field">
+    <div class="btn">
+      <span>Upload Image</span>
+      <input type="file" id="imageFile" accept=".svg,.png,.jpg,.jpeg">
+    </div>
+    <div class="file-path-wrapper">
+      <input class="file-path validate" type="text" placeholder="Select an image file">
+    </div>
+  </div>
+  
+  <!-- Target dimensions with +/- buttons -->
+  <div class="row">
+    <div class="input-field col s12 m6">
+      <label for="targetWidth" class="active">Target Width (inches)</label>
+      <div class="input-group">
+        <button class="btn red" onclick="decrease('targetWidth')">–</button>
+        <input id="targetWidth" type="number" value="34" step="0.1">
+        <button class="btn green" onclick="increase('targetWidth')">+</button>
+      </div>
+    </div>
+    <div class="input-field col s12 m6">
+      <label for="targetHeight" class="active">Target Height (inches)</label>
+      <div class="input-group">
+        <button class="btn red" onclick="decrease('targetHeight')">–</button>
+        <input id="targetHeight" type="number" value="11" step="0.1">
+        <button class="btn green" onclick="increase('targetHeight')">+</button>
+      </div>
+    </div>
+  </div>
+  
+  <div id="instructions" style="display:none; margin-top: 15px; font-weight: bold;">
+    Click on each page below to download that part of the poster for printing.
+  </div>
+  
+  <div class="preview-container" id="previewContainer" style="display:none;">
+    <canvas id="previewCanvas" class="preview-canvas"></canvas>
+    <canvas id="gridCanvas" class="preview-grid"></canvas>
+    <div id="overlayContainer" class="preview-overlay"></div>
+  </div>
 </div>
 
-<div class="preview-container" id="previewContainer" style="display:none;">
-  <canvas id="previewCanvas" class="preview-canvas"></canvas>
-  <canvas id="gridCanvas" class="preview-grid"></canvas>
-  <div id="overlayContainer" class="preview-overlay"></div>
-</div>
+<!-- Materialize JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 
 <script>
 const DPI = 300;
@@ -46,16 +117,16 @@ document.getElementById('imageFile').addEventListener('change', handleFileUpload
 document.getElementById('targetWidth').addEventListener('input', handleWidthChange);
 document.getElementById('targetHeight').addEventListener('input', handleHeightChange);
 
-// 🔑 Auto-load default "delight.svg" on page load
+// Auto-load default "delight.svg" on page load
 window.onload = () => loadImage('delight.svg');
 
 async function handleFileUpload() {
   const fileInput = document.getElementById('imageFile');
   const file = fileInput.files[0];
   if (!file) return;
-
+  
   const extension = file.name.split('.').pop().toLowerCase();
-
+  
   if (extension === 'svg') {
     const svgText = await file.text();
     const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
@@ -97,6 +168,18 @@ function handleHeightChange() {
   const widthInches = heightInches * aspectRatio;
   document.getElementById('targetWidth').value = widthInches.toFixed(2);
   updatePreviewAndSlices();
+}
+
+function increase(fieldId) {
+  const field = document.getElementById(fieldId);
+  field.value = parseFloat(field.value) + 1;
+  field.dispatchEvent(new Event('input'));
+}
+
+function decrease(fieldId) {
+  const field = document.getElementById(fieldId);
+  field.value = Math.max(1, parseFloat(field.value) - 1);
+  field.dispatchEvent(new Event('input'));
 }
 
 function updatePreviewAndSlices() {
@@ -183,7 +266,11 @@ function updatePreview() {
     const a = document.createElement('a');
     a.href = link;
     a.download = `poster_row${rIdx + 1}_col${cIdx + 1}.png`;
-    Object.assign(a.style, { position: 'absolute', left: `${cIdx * sliceWidth}px`, top: `${rIdx * sliceHeight}px`, width: `${sliceWidth}px`, height: `${sliceHeight}px` });
+    a.style.position = 'absolute';
+    a.style.left = `${cIdx * sliceWidth}px`;
+    a.style.top = `${rIdx * sliceHeight}px`;
+    a.style.width = `${sliceWidth}px`;
+    a.style.height = `${sliceHeight}px`;
     overlayContainer.appendChild(a);
   }));
 
